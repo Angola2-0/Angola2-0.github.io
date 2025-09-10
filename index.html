@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tree Grower Game</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            background: linear-gradient(to bottom, #87CEEB, #B0E0E6);
+            color: #333;
+            overflow: hidden; /* Prevents scrollbars */
+        }
+        .game-container {
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #2E8B57;
+            margin-bottom: 10px;
+        }
+        #gameCanvas {
+            background-color: #f0f8ff;
+            border-radius: 15px;
+            cursor: pointer;
+            display: block; /* Removes extra space below canvas */
+        }
+        #growth-meter {
+            margin-top: 15px;
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #4682B4;
+        }
+        .instructions {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1>Tree Grower</h1>
+        <canvas id="gameCanvas"></canvas>
+        <div id="growth-meter">Tree Height: 10m</div>
+        <p class="instructions">Click the falling water droplets to grow your tree!</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const growthMeter = document.getElementById('growth-meter');
+
+        // Set canvas dimensions based on container/window size
+        const setCanvasSize = () => {
+            const container = document.querySelector('.game-container');
+            const maxWidth = window.innerWidth * 0.9;
+            const maxHeight = window.innerHeight * 0.7;
+            
+            const canvasWidth = Math.min(600, maxWidth);
+            const canvasHeight = Math.min(400, maxHeight);
+
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+        };
+
+        setCanvasSize();
+        window.addEventListener('resize', setCanvasSize);
+
+
+        // --- Game Variables ---
+        let tree = {
+            height: 10,
+            baseWidth: 5,
+            x: canvas.width / 2,
+            y: canvas.height
+        };
+
+        let droplets = [];
+        let dropletSpawnTimer = 0;
+        const dropletSpawnInterval = 60; // Spawn a new droplet every 60 frames (approx. 1 second)
+
+        // --- Game Objects ---
+
+        // Function to draw the tree
+        function drawTree() {
+            const x = canvas.width / 2;
+            const y = canvas.height;
+            const trunkHeight = tree.height * 2;
+            const trunkWidth = tree.baseWidth + (tree.height / 10);
+            const leavesRadius = 15 + tree.height / 2;
+
+            // Draw trunk
+            ctx.fillStyle = '#8B4513'; // SaddleBrown
+            ctx.beginPath();
+            ctx.moveTo(x - trunkWidth / 2, y);
+            ctx.lineTo(x + trunkWidth / 2, y);
+            ctx.lineTo(x + trunkWidth / 2, y - trunkHeight);
+            ctx.lineTo(x - trunkWidth / 2, y - trunkHeight);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw leaves
+            ctx.fillStyle = '#2E8B57'; // SeaGreen
+            ctx.beginPath();
+            ctx.arc(x, y - trunkHeight, leavesRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw a few more leaf clusters for a fuller look
+            ctx.fillStyle = '#3CB371'; // MediumSeaGreen
+            ctx.beginPath();
+            ctx.arc(x - leavesRadius / 2, y - trunkHeight + 5, leavesRadius * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + leavesRadius / 2, y - trunkHeight + 5, leavesRadius * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Function to create and manage water droplets
+        function handleDroplets() {
+            dropletSpawnTimer++;
+            if (dropletSpawnTimer >= dropletSpawnInterval) {
+                dropletSpawnTimer = 0;
+                droplets.push({
+                    x: Math.random() * canvas.width,
+                    y: -10,
+                    radius: 7,
+                    speed: 1 + Math.random() * 2 // Varying speed
+                });
+            }
+
+            for (let i = droplets.length - 1; i >= 0; i--) {
+                const drop = droplets[i];
+                drop.y += drop.speed;
+
+                // Draw droplet
+                ctx.beginPath();
+                ctx.arc(drop.x, drop.y, drop.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(70, 130, 180, 0.8)'; // SteelBlue with transparency
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+
+                // Remove droplets that are off-screen
+                if (drop.y > canvas.height + drop.radius) {
+                    droplets.splice(i, 1);
+                }
+            }
+        }
+
+        // --- Game Logic ---
+
+        // Handle clicks on the canvas
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+
+            for (let i = droplets.length - 1; i >= 0; i--) {
+                const drop = droplets[i];
+                const distance = Math.sqrt((mouseX - drop.x)**2 + (mouseY - drop.y)**2);
+
+                if (distance < drop.radius + 5) { // A little extra buffer for easier clicking
+                    droplets.splice(i, 1);
+                    growTree();
+                    break; // Only register one click per frame
+                }
+            }
+        });
+
+        function growTree() {
+            tree.height += 2;
+            growthMeter.textContent = `Tree Height: ${tree.height}m`;
+        }
+
+        // The main game loop
+        function gameLoop() {
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw game elements
+            handleDroplets();
+            drawTree();
+
+            // Request the next frame
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game
+        drawTree(); // Draw initial tree
+        gameLoop();
+    </script>
+</body>
+</html>
