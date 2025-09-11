@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Invasion Shooter</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #0d0d0d;
+            font-family: 'Press Start 2P', cursive;
+            color: #fff;
+            overflow: hidden;
+        }
+        .game-container {
+            position: relative;
+            border: 2px solid #333;
+            box-shadow: 0 0 20px #ff00ff, 0 0 30px #00ffff;
+        }
+        canvas {
+            display: block;
+            background-color: #000;
+        }
+        .ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 16px;
+            pointer-events: none;
+        }
+        .modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(10, 10, 10, 0.85);
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #fff;
+            box-shadow: 0 0 15px #fff;
+            display: none; /* Hidden by default */
+        }
+        .modal h2 {
+            margin: 0 0 20px 0;
+            font-size: 28px;
+        }
+        .modal p {
+            margin-bottom: 30px;
+        }
+        .modal button {
+            background-color: #fff;
+            color: #000;
+            border: none;
+            padding: 12px 25px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .modal button:hover {
+            background-color: #ff00ff;
+            color: #fff;
+            box-shadow: 0 0 10px #ff00ff;
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div class="ui">
+        <div id="score">SCORE: 0</div>
+        <div id="level">LEVEL: 1</div>
+    </div>
+    <div id="gameOverModal" class="modal">
+        <h2>GAME OVER</h2>
+        <p id="finalScore"></p>
+        <button id="restartButton">RESTART</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const levelEl = document.getElementById('level');
+    const gameOverModal = document.getElementById('gameOverModal');
+    const finalScoreEl = document.getElementById('finalScore');
+    const restartButton = document.getElementById('restartButton');
+
+    // --- Game Configuration ---
+    let scale = 1; // Scale factor for responsiveness
+    let gameWidth = 800;
+    let gameHeight = 600;
+
+    let player, enemies, blocks, playerProjectiles, enemyProjectiles;
+    let score = 0;
+    let level = 1;
+    let gameOver = false;
+    const keys = {};
+
+    // --- Utility Functions ---
+    function resizeCanvas() {
+        const container = document.querySelector('.game-container');
+        const availableWidth = window.innerWidth * 0.95;
+        const availableHeight = window.innerHeight * 0.95;
+        const aspectRatio = gameWidth / gameHeight;
+
+        let newWidth, newHeight;
+
+        if (availableWidth / availableHeight > aspectRatio) {
+            newHeight = availableHeight;
+            newWidth = newHeight * aspectRatio;
+        } else {
+            newWidth = availableWidth;
+            newHeight = newWidth / aspectRatio;
+        }
+        
+        container.style.width = `${newWidth}px`;
+        container.style.height = `${newHeight}px`;
+        canvas.width = gameWidth;
+        canvas.height = gameHeight;
+    }
+
+
+    function random(min, max) {
+        return Math.random() * (max - min) + min;
+    }
+
+    // --- Game Classes ---
+    class Player {
+        constructor() {
+            this.width = 30;
+            this.height = 30;
+            this.x = 50;
+            this.y = gameHeight / 2 - this.height / 2;
+            this.speed = 5;
+            this.color = '#00ffff';
+            this.shootCooldown = 15; // frames
+            this.lastShotFrame = 0;
+        }
+
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.strokeStyle = '#fff';
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+        }
+
+        update(currentFrame) {
+            if (keys['ArrowUp'] && this.y > 0) this.y -= this.speed;
+            if (keys['ArrowDown'] && this.y < gameHeight - this.height) this.y += this.speed;
+            if (keys['ArrowLeft'] && this.x > 0) this.x -= this.speed;
+            if (keys['ArrowRight'] && this.x < gameWidth - this.width) this.x += this.speed;
+
+            if (keys['z'] || keys['Z']) {
+                if (currentFrame - this.lastShotFrame > this.shootCooldown) {
+                    playerProjectiles.push(new Projectile(this.x + this.width, this.y + this.height / 2, 5, 'player'));
+                    this.lastShotFrame = currentFrame;
+                }
+            }
+        }
+    }
+
+    class Enemy {
+        constructor(x, y) {
+            this.width = 25;
+            this.height = 25;
+            this.x = x;
+            this.y = y;
+            this.color = '#ff00ff';
+        }
+
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+    
+    class EnemyController {
+        constructor() {
+            this.enemies = [];
+            this.xDirection = -1;
+            this.yDirection = 0;
+            this.speed = 0.5 + (level - 1) * 0.2;
+            this.moveDownAmount = 30;
+            this.needsToMoveDown = false;
+            this.shootChance = 0.001 + (level - 1) * 0.0005; // Per enemy, per frame
+        }
+
+        spawnEnemies() {
+            const rows = 5;
+            const cols = 8;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const x = gameWidth - 50 - (c * 40);
+                    const y = 50 + (r * 40);
+                    this.enemies.push(new Enemy(x, y));
+                }
+            }
+        }
+
+        update() {
+            if (this.needsToMoveDown) {
+                 this.enemies.forEach(enemy => enemy.y += this.moveDownAmount);
+                 this.needsToMoveDown = false;
+                 return;
+            }
+            
+            let boundaryHit = false;
+            this.enemies.forEach(enemy => {
+                enemy.x += this.speed * this.xDirection;
+                if (enemy.x <= 0 || enemy.x + enemy.width >= gameWidth) {
+                    boundaryHit = true;
+                }
+                
+                // Random shooting
+                if (Math.random() < this.shootChance) {
+                    this.shoot(enemy);
+                }
+            });
+
+            if (boundaryHit) {
+                this.xDirection *= -1;
+                this.needsToMoveDown = true;
+            }
+        }
+        
+        shoot(enemy) {
+            const shootType = Math.random();
+            // 70% chance to shoot horizontally, 30% vertically
+            if (shootType < 0.7) {
+                 enemyProjectiles.push(new Projectile(enemy.x, enemy.y + enemy.height / 2, 5, 'enemy_h'));
+            } else {
+                 const verticalDir = Math.random() < 0.5 ? 'enemy_v_up' : 'enemy_v_down';
+                 enemyProjectiles.push(new Projectile(enemy.x + enemy.width / 2, enemy.y, 3, verticalDir));
+            }
+        }
+
+        draw() {
+            this.enemies.forEach(enemy => enemy.draw());
+        }
+    }
+
+    class Projectile {
+        constructor(x, y, speed, type) {
+            this.x = x;
+            this.y = y;
+            this.speed = speed;
+            this.type = type;
+            this.width = 10;
+            this.height = 4;
+            this.color = type === 'player' ? '#00ffff' : '#ffff00';
+            
+            if(type.startsWith('enemy_v')) {
+                [this.width, this.height] = [this.height, this.width]; // Swap for vertical
+            }
+        }
+
+        update() {
+            if (this.type === 'player') {
+                this.x += this.speed;
+            } else if (this.type === 'enemy_h') {
+                this.x -= this.speed;
+            } else if (this.type === 'enemy_v_up') {
+                this.y -= this.speed;
+            } else if (this.type === 'enemy_v_down') {
+                this.y += this.speed;
+            }
+        }
+
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+
+    class Block {
+        constructor(x, y, width, height) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+            this.maxHealth = 10;
+            this.health = this.maxHealth;
+            this.baseColor = [40, 180, 40]; // R, G, B
+        }
+
+        draw() {
+            const healthRatio = this.health / this.maxHealth;
+            // Color shifts from green to red as health decreases
+            const r = this.baseColor[0] + (200 - this.baseColor[0]) * (1 - healthRatio);
+            const g = this.baseColor[1] * healthRatio;
+            const b = this.baseColor[2] * healthRatio;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+        
+        takeDamage() {
+            this.health--;
+        }
+    }
+    
+    // --- Collision Detection ---
+    function checkCollisions() {
+        // Player projectiles vs enemies
+        for (let i = playerProjectiles.length - 1; i >= 0; i--) {
+            const p = playerProjectiles[i];
+            for (let j = enemies.enemies.length - 1; j >= 0; j--) {
+                const e = enemies.enemies[j];
+                if (p.x < e.x + e.width && p.x + p.width > e.x && p.y < e.y + e.height && p.y + p.height > e.y) {
+                    playerProjectiles.splice(i, 1);
+                    enemies.enemies.splice(j, 1);
+                    score += 100;
+                    updateUI();
+                    break;
+                }
+            }
+        }
+
+        // Projectiles (player & enemy) vs blocks
+        const allProjectiles = [...playerProjectiles, ...enemyProjectiles];
+        for (let i = allProjectiles.length - 1; i >= 0; i--) {
+            const p = allProjectiles[i];
+             for (let j = blocks.length - 1; j >= 0; j--) {
+                const b = blocks[j];
+                if (p.x < b.x + b.width && p.x + p.width > b.x && p.y < b.y + b.height && p.y + p.height > b.y) {
+                    if(p.type === 'player') playerProjectiles.splice(playerProjectiles.indexOf(p), 1);
+                    else enemyProjectiles.splice(enemyProjectiles.indexOf(p), 1);
+                    
+                    b.takeDamage();
+                    if(b.health <= 0) {
+                        blocks.splice(j, 1);
+                    }
+                    break; 
+                }
+            }
+        }
+
+        // Enemy projectiles vs player
+        for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+            const p = enemyProjectiles[i];
+            if (p.x < player.x + player.width && p.x + p.width > player.x && p.y < player.y + player.height && p.y + p.height > player.y) {
+                setGameOver();
+            }
+        }
+        
+        // Enemies vs Player
+        for (let i = enemies.enemies.length - 1; i >= 0; i--) {
+            const e = enemies.enemies[i];
+            if (e.x < player.x + player.width && e.x + e.width > player.x && e.y < player.y + player.height && e.y + e.height > player.y) {
+                 setGameOver();
+            }
+        }
+    }
+    
+    function setGameOver() {
+        gameOver = true;
+        finalScoreEl.textContent = `FINAL SCORE: ${score}`;
+        gameOverModal.style.display = 'block';
+    }
+
+    // --- Game State & UI ---
+    function init() {
+        resizeCanvas();
+        score = 0;
+        level = 1;
+        gameOver = false;
+        
+        player = new Player();
+        enemies = new EnemyController();
+        enemies.spawnEnemies();
+        
+        blocks = [];
+        const blockPositions = [
+            { x: 150, y: 100 }, { x: 150, y: gameHeight - 150 },
+            { x: 300, y: 200 }, { x: 300, y: gameHeight - 250 },
+            { x: gameWidth - 250, y: 100}, { x: gameWidth - 250, y: gameHeight - 150}
+        ];
+        blockPositions.forEach(pos => {
+            blocks.push(new Block(pos.x, pos.y, 80, 30));
+        });
+        
+        playerProjectiles = [];
+        enemyProjectiles = [];
+        
+        updateUI();
+        gameOverModal.style.display = 'none';
+    }
+
+    function updateUI() {
+        scoreEl.textContent = `SCORE: ${score}`;
+        levelEl.textContent = `LEVEL: ${level}`;
+    }
+    
+    function nextLevel() {
+        level++;
+        playerProjectiles = [];
+        enemyProjectiles = [];
+        
+        // Keep existing blocks but heal them
+        blocks.forEach(b => b.health = b.maxHealth);
+
+        enemies = new EnemyController();
+        enemies.spawnEnemies();
+        updateUI();
+    }
+
+    // --- Main Game Loop ---
+    let frameCount = 0;
+    function gameLoop() {
+        if (gameOver) return;
+
+        frameCount++;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, gameWidth, gameHeight);
+
+        // Update & Draw
+        player.update(frameCount);
+        player.draw();
+
+        enemies.update();
+        enemies.draw();
+
+        playerProjectiles.forEach((p, i) => {
+            p.update();
+            p.draw();
+            if (p.x > gameWidth) playerProjectiles.splice(i, 1);
+        });
+
+        enemyProjectiles.forEach((p, i) => {
+            p.update();
+            p.draw();
+            if (p.x < 0 || p.y < 0 || p.y > gameHeight) enemyProjectiles.splice(i, 1);
+        });
+        
+        blocks.forEach(b => b.draw());
+
+        // Collisions
+        checkCollisions();
+        
+        // Check for win condition
+        if (enemies.enemies.length === 0) {
+            nextLevel();
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+
+    // --- Event Listeners ---
+    window.addEventListener('keydown', (e) => keys[e.key] = true);
+    window.addEventListener('keyup', (e) => keys[e.key] = false);
+    window.addEventListener('resize', resizeCanvas);
+    restartButton.addEventListener('click', () => {
+        init();
+        gameLoop();
+    });
+
+    // --- Start Game ---
+    init();
+    gameLoop();
+</script>
+
+</body>
+</html>
